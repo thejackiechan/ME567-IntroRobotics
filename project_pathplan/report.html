@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+
+<html>
+
+	<body>
+
+		<center><strong><font size = "5"> Path Planning Observations and Results </font></strong>
+		<br><i> By: Jackie Chan </i></br></center>
+
+		<b> Introduction </b>
+		<p style="text-indent: 50px">
+			With the advent of autonomous robots and vehicles, path planning was developed to serve as an integral part of their function. Given previously constructed maps that depict the locations of obstacles, path planning uses this data to assist robots to autonomously navigate through different environments. Various path planning algorithms have been designed and implemented in real-world applications. For example, SLAM (simultaneous localization and mapping) implementations can be found in consumer robot vacuum cleaners today. For this path planning assignment, a total of four path planning algorithms (depth-first search, breadth-first search, A-star, and greedy best-first search) were implemented and then compared in regard to effectiveness and efficiency upon realizing the goal. 
+		</p>
+		
+		<b> Methods </b>
+		<p style="text-indent: 50px">
+			Before demonstrating the results of these path planning methods, it is necessary to provide some background on how each algorithm works to better understand why some may be better than others. For each graph search, a start node or location is initially defined. Adjacent nodes to the start node are termed neighbors to that node, which are subsequently added to a visit list. Based on some priority condition, one of these neighbors (A for instance) is visited in the next iteration. Neighbors of A are then queued onto the visit list, and the process is repeated until the goal location is reached. In the case that a neighbor happens to be in collision with an obstacle or if it has been queued previously, then it is not added to the visit list. Ultimately, the shortest path with respect to the algorithm can be obtained by tracing the visited neighbors from the start node to the goal. 
+		</p>
+		<p style="text-indent: 50px">
+			In essence, each algorithm is fundamentally similar in many aspects and only differs in how priority is defined. For depth-first search (DFS), the visit list is implemented as a stack and thus, neighbors are selected based on whichever was queued last. On the other hand, the visit list for breadth-first search (BFS) is implemented in the form of a queue, in which case neighbors are selected based on which was queued first. Both A-star (A*) and greedy best-first (GBF) also operate on a priority concept but not in the same manner as DFS and BFS. Rather than prioritize according to the order in which neighbors were added to the queue, A* and GBF operate according to an f-score heuristic, defined separately as: 
+			
+			<center> f-score = distance along current path back to start + shortest distance to goal (A*) <br>
+			<br> f-score = shortest distance to goal (GBF) </br></center>
+			<br>
+
+			The distance along the current path back to the start refers to the total distance from the current neighbor back to the start while the shortest distance to the goal refers to the Euclidean distance (ignoring any obstacles) from the current neighbor to the goal. Although the implications of having different f-score definitions are not necessarily apparent, it will be upon seeing the results. Alluding back to the A* and GBF search algorithms, neighbors are selected based on whichever has the lowest f-score. F-scores are sorted via implementation of a min-heap, a binary tree such that the number contained in each node is greater than (or equal to) the number in that node's children. 
+		</p>
+
+		<b> Results/Discussion </b>
+		<p>
+			Each search algorithm was tested on a total of five different maps (Empty, Misc, Narrow 1, Narrow 2, Three Sections, and a modified Empty map). The findings can be observed in Figures 1-6. 
+
+		</p>
+		<!--
+			Empty map
+		-->
+		<img src="https://i.postimg.cc/wMvNQFjF/DFS_empty.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/3JkpyL6x/BFS_empty.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/7hW2s7C4/A_empty.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/T27g38ts/GBF_empty.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 1: Results of search algorithms performed on Empty </i></center></p>
+
+		<!--
+			Misc map
+		-->
+		<img src="https://i.postimg.cc/pXRHdTdW/DFS_Misc.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/Wz6cnR5c/BFS_misc.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/BZx3sD47/A_misc.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/9Fbjwh4G/GBF_misc.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 2: Results of search algorithms performed on Misc </i></center></p>
+
+  		<!--
+			Narrow1 map
+		-->
+		<img src="https://i.postimg.cc/6qKDTjtj/DFS_narrow1.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/GpW0n3N1/BFS_narrow1.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/q7hfF61L/A_narrow1.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/xCMwfDDN/GBF_narrow1.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 3: Results of search algorithms performed on Narrow 1 </i></center></p>
+
+		<!--
+			Narrow2 map
+		-->
+		<img src="https://i.postimg.cc/NjFZyrvc/DFS_narrow2.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/J41fL2Tt/BFS_narrow2.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/bY074h9K/A_narrow2.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/GhqZhxNK/GBF_narrow2.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 4: Results of search algorithms performed on Narrow 2 </i></center></p>
+
+		<!--
+			Three sections map
+		-->
+		<img src="https://i.postimg.cc/WbbHKJ3k/DFS_3.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/2yTXyCHy/BFS_3.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/RhvDvWL2/A_3.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/h40Yp0Sn/GBF_3.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 5: Results of search algorithms performed on Three Sections </i></center></p>
+
+		<!--
+			New configuration
+		-->
+		<img src="https://i.postimg.cc/g0zv5BHF/DFS_new.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/t4Hddg1g/BFS_new.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+		<img src="https://i.postimg.cc/YqFfmFCV/A_new.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px;" >
+		<img src="https://i.postimg.cc/pLYfst8J/GBF_new.png" style="width: 24.5%; padding: 2px; margin-bottom: 5px" >
+
+		<p><center><i> Figure 6: Results of search algorithms performed on Empty with goal location at [-0.7,-0.7] </i></center></p>
+
+		<p style="text-indent: 50px"> 
+			In these figures, the gray squares represent the queued neighbors, the blue square represents the start node, the green square represents the goal, and the blue line represents the shortest path through the neighbors. If we solely measure effectiveness based on shortest path length, it is apparent that DFS is a sub-optimal search algorithm because it performs worse than every other method on any map. Based on the results, the DFS path length compared to the optimal length is 45.20 to 8.00, 19.80 to 9.80, 47.40 to 8.00, 51.00 to 11.40, 56.60 to 14.20 respectively for each map (in order of Empty, Misc, Narrow 1, Narrow 2, and Three Sections). This effect is exaggerated in Figure 6 (a staggering 185.40 units compared to optimal 1.40), where the goal is placed to the left of the start node. In this particular stack implementation, the neighbor to the south was selected with the greatest priority followed by the one to the east, which explains why the northwestern neighbors would be visited last. Furthermore, it appears that BFS, A*, and GBF perform similarly in regard to finding the optimal path length. With the exception of its performance on the Misc map, GBF seems to be almost as effective as BFS and A*. 
+		</p>
+
+		<p style="text-indent: 50px"> 
+			However, effectiveness (as measured by shortest path length) is not the only criterion for evaluating an algorithm's performance. Efficiency, as measured by an algorithm's speed in acquiring its optimal path, is arguably a valuable criterion for determining the best algorithm for path planning. Speed is directly related to the number of iterations, and can be somewhat inferred by the queue size as well. For example, a high iteration count implies a slower algorithm, which is common in both the BFS and A* algorithm but to a greater degree in the former. Although queue size does not have as straightforward a relationship to speed as number of iterations does, a low queue size is typically associated with a slower algorithm. This is best observed in the BFS example in Figure 5. A queue size of 21 means that there are only 21 more neighbors left to check on the entire map, and thus the algorithm must have checked countless neighbors before arriving at the goal. By factoring in speed as well as the ability to find the optimal path length, GBF appears to be the most effective and efficient method. As depicted in Figures 1,3,4,5 and 6, GBF not only shares the same optimal path length with BFS and A*, but also has significantly fewer iterations than the two methods (by at least an order of magnitude). For example, GBF finds the optimal path length in only 81 iterations whereas it takes 2243 and 3501 iterations for A* and BFS, respectively, in Figure 1. Before we compare BFS and A* by efficiency, it is important to understand that the BFS algorithm searches for neighbors equally in all directions. Graphically, these neighbors (represented as gray squares) grow in a diamond-shaped pattern (Figure 6), in which each side of the diamond is equidistant from its center (represented by the blue square). On the other hand, A* biases the search for neighbors towards the direction of the goal location (Figure 6), which is primarily due to the implementation of the f-score heuristic. This asymmetric neighbor search explains why A* is more efficient than BFS and how it has fewer iterations - at least 600 fewer across all maps in Figures 1-5.
+		</p>
+
+		<p style="text-indent: 50px">
+			Based on the aggregate data, it seems that A* and GBF are comparable in performance. Typically, when A* and GBF have the same optimal path (Figures 1,3,4,5, and 6), the latter tends to be much quicker in achieving it as mentioned previously. However, there are instances in which A* finds a much shorter path than GBF does, specifically in the Misc map (Figure 2); A* reports 9.80 units as the path length while GBF reports 17.80. This anomaly suggests that the performance of GBF is affected by the geometry of the map. Comparing the A* and DFS algorithms, the only difference lies in how the f-score heuristic is defined. The latter only considers the straight-line distance between the start and goal locations and is thus easily manipulated by the presence of an obstacle between the two locations. In the GBF result in Misc (Figure 2), the goal is located in the bottom right so it acts as a magnet that pulls the path search algorithm towards it. This is evident because the queued neighbors are clustered near the bottom-right, indicating that the algorithm prioritizes searching these neighbors first before realizing that it must move upwards and outwards in order to reach the goal. In the A* case, the fact that the f-score heuristic includes the distance of the neighbors makes it more robust in that the search is not invested entirely on the bottom-right neighbors. By the time the algorithm has searched the bottom-right neighbors located before the wall, it will also have searched the neighbors on the upper-right (at the tip of the wall), allowing it to quickly reach the goal from there. This is implied by the relatively even distribution of neighbors in the A* result as compared to the GBF one in Figure 2. Hence, in cases where a large barrier (or several) obstructs access to the goal location such as in the Misc map, GBF may not be the best choice in terms of obtaining the shortest path.
+		</p>
+
+		<b> Conclusion </b>
+
+		<p style="text-indent: 50px">
+			From the results of testing DFS, BFS, A*, and GBF on a variety of maps, it is clear that DFS is a sub-optimal algorithm (and the worst of the four) for finding the optimal path length because its effectiveness depends heavily on where the goal is relative to the start node. BFS has been demonstrated to be better than DFS but worse than A* and GBF because it simply does not operate using a heuristic that depends on the goal location. Similar to DFS, its effectiveness depends on where the goal is relative to the start (ex. Figure 2 vs. Figure 6). GBF can achieve similar optimal path lengths as A* and BFS, and it can also be much more efficient than A*, but its results can vary depending on the location of obstacles in the map (ex. Figure 2 vs. any other Figure). A* proves to be the most robust algorithm that has the best of both worlds due to the fact that it is not easily manipulated by map geometry or goal placement.
+		</p>
+
+	<body>
+
+	<head>
+    	<title> Assignment 1 Report - Path Planning Observations and Results  </title>
+
+    </head>
+</html> 

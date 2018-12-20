@@ -1,0 +1,1046 @@
+<!--|\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/|
+|\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/|
+||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/
+/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\
+
+    2D Path Planning in HTML5 Canvas
+
+    Various search algorithms for collision-free path planning in 2D worlds 
+      displayed in HTML5 Canvas, including: 
+
+      A-Star algorithm by Hart, Nilsson, and Raphael (1968) 
+      RRT and RRT-Connect algorithms by Kuffner and LaValle (2000)
+      RRT-Star algorithm by Karaman, Walter, et al. (2011)
+
+    @author ohseejay / https://github.com/ohseejay
+                     / https://bitbucket.org/ohseejay
+
+    Chad Jenkins
+    Laboratory for Perception RObotics and Grounded REasoning Systems
+    University of Michigan
+
+    License: Michigan Honor License 
+
+    Usage: planner will start upon browser loading this file, with execution 
+      parameters specifing:
+
+      search_alg: string specifying choice of search algorithm, as one of:
+        "depth-first","breadth-first","greedy-best-first","A-star",
+        "RRT","RRT-connect","RRT-star"
+      planning_scene: string specifying choice of 2D world, as one of:
+        "empty","misc","narrow1","narrow2","three_sections"
+      q_init: 2-element 1D array with coordinates of start location
+      q_goal: 2-element 1D array with coordinates of goal location
+      eps: "epsilon" number for search spatial resolution of graph 
+        as well as RRT step length
+
+    these parameters can be specified in the URL as parameter assignments
+    separated by question marks, as in the following example: 
+
+      search_canvas.html?search_alg=A-star?planning_scene=misc?q_init=[0,0]?q_goal=[4,4]?eps=0.1
+
+|\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/|
+||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/
+/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\
+\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\/||\-->
+
+
+<html>
+
+<body onload="init()">
+
+    My 2D planner
+    <br>
+
+    <canvas id="myCanvas" width=800 height=800 style="z-index: 10 ;border:1px solid #000000;">
+    </canvas> 
+
+    <script>
+
+//////////////////////////////////////////////////
+/////     INITIALIZATION FUNCTION DEFINITONS
+//////////////////////////////////////////////////
+
+function init() {
+
+    // initialize search variables, data structures, DOM elements, etc.
+    initSearch();
+
+    // start main animation/iteration loop 
+    animate();
+}
+
+function initSearch() {
+
+    // specify default search algorithm to use for planning
+    //search_alg = "depth-first";  
+    //search_alg = "breadth-first";  
+    //search_alg = "greedy-best-first";  
+    //search_alg = "A-star";  
+    //search_alg = "RRT";  
+    //search_alg = "RRT-connect";  
+    search_alg = "RRT-star";  
+
+    // specify default the world for the planner 
+    //  (stored as "range" global variable with name "planning_scene")
+    //planning_scene = "empty";
+    planning_scene = "misc";
+    //planning_scene = "narrow1";
+    //planning_scene = "narrow2";
+    //planning_scene = "three_sections";
+
+    // specify default eps (epsilon) spatial resolution variable
+    //   for RRT, specifies threshold radius for step size and reaching goal
+    eps = 0.1;
+
+    // create event handlers for the mouse
+    canvas = document.getElementById("myCanvas");
+    mouse_x = 0;
+    mouse_y = 0;
+
+    // when the mouse moves, update the mouse's location
+    canvas.onmousemove = function handleMouseMove(event) {
+        mouse_x = event.clientX;
+        mouse_y = event.clientY;
+    };
+
+    // when the mouse button is pressed, update mouseDown
+    canvas.onmousedown = function() { 
+        mouseDown = 1; 
+    };
+
+    // when the mouse button is released, update mouseDown
+    canvas.onmouseup = function() {
+        mouseDown = 0;
+        q_goal = [xformViewWorldX(mouse_x),xformViewWorldY(mouse_y)];
+
+        // IMPORTANT: mouse_x and mouse_y are in absolute coordinates with
+        //    respect to the browser window, and in units of pixels.  The
+        //    xformViewWorldX only considers relative coordinates for the
+        //    canvas element.
+    };   
+
+    // specify start and goal configurations
+    q_start_config = [0,0];
+    q_goal_config = [4,4]; 
+    q_init = q_start_config;
+    q_goal = q_goal_config;
+
+    var url_parsed = window.location.href.split("?");
+    for (i=1;i<url_parsed.length;i++) {
+        var param_parsed = url_parsed[i].split("=");
+        //eval(param_parsed[0]+"=\'"+param_parsed[1]+"\'");
+        if ((param_parsed[0] !== "search_alg")&&(param_parsed[0] !== "planning_scene"))
+            eval(param_parsed[0]+"="+param_parsed[1]);
+        else
+            eval(param_parsed[0]+"=\'"+param_parsed[1]+"\'");
+    }
+
+    // set the world for the planner 
+    setPlanningScene();
+
+    // initialize search tree from start configurations (RRT-based algorithms)
+    T_a = initRRT(q_init);
+    // also initialize search tree from goal configuration (RRT-Connect)
+    T_b = initRRT(q_goal);
+
+    // initialize cost for RRT* 
+    if(search_alg == "RRT-star") T_a.vertices[0].vertex.cost = 0;
+
+    // initialize graph search algorithms (DFS, BFS, A-star) 
+    initSearchGraph();
+
+    // flag to continue or stop search iterations
+    search_iterate = true;
+
+    // counter for number of search iterations executed
+    search_iter_count = 0;
+    search_result = "starting";
+
+    // threshold for number of maximum search iterations for certain algorithms
+    search_max_iterations = 10000;
+
+    // counter for number of configurations visited
+    search_visited = 0;
+
+    // variable to sum final path length
+    path_length = 0;
+
+    // capture the current system time for timing of successive iterations
+    //   using the given Date object
+    cur_time = Date.now();
+
+    // specify minimum number of milliseconds between successive search 
+    //   iterations
+    min_msec_between_iterations = 1; //20 
+
+    // create textbar DOM element for text output to browser window
+    textbar = document.createElement('div');
+    textbar.style.zIndex = 0;    // if you still don't see the label, try uncommenting this
+    textbar.style.position = 'absolute';
+    textbar.style.width = window.width-10;
+    textbar.style["font-family"] = "Monospace";
+    textbar.style["font-size"] = "14px";
+    textbar.style.height = 20;
+    textbar.style.color = "#000000";
+    textbar.innerHTML = "4Progress - RRT Canvas";
+    //textbar.style.top = 30 + 'px';  // position textbar wrt. document
+    textbar.style.top = (25 + document.getElementById("myCanvas").offsetTop) + 'px';  // position textbar wrt. canvas
+    textbar.style.left = 30 + 'px';
+    document.body.appendChild(textbar);
+
+}
+
+//////////////////////////////////////////////////
+/////     ANIMATION AND INTERACTION LOOP
+//////////////////////////////////////////////////
+
+function animate() {
+
+    // IMPORTANT: 
+    //   Search iterations occur asynchronously, once per call to this function.
+    //   This structure does not use an explicit loop to advance the search.
+    //   Such an explicit loop would keep the process inside this function
+    //   without giving control back to the browser run-time.  As a result, 
+    //   the browser would become non-responsive and non-interactive.
+    //   In this asynchronous structure, the animate function is called to 
+    //   first perform one iteration of the search algorithm, then register
+    //   itself as an animation callback to the brower using the 
+    //   requestAnimationFrame() function, and finally returning out of the
+    //   function (giving control back to the browser).  
+    //   requestAnimationFrame() sets this function to be executed 
+    //   again in the very near future.  Such behavior is similar to expected 
+    //   control flow of the setInterval function.
+
+    // render the world to the canvas element
+    drawRobotWorld();
+
+    // make sure the rrt iterations are not running faster than animation update
+    if (search_iterate && (Date.now()-cur_time > min_msec_between_iterations)) {
+
+        // update time marker for last iteration update
+        cur_time = Date.now();
+
+        // update iteration count
+        search_iter_count++; 
+
+        // call iteration for the selected search algorithm
+        switch (search_alg) {
+            case "depth-first": 
+            case "breadth-first": 
+            case "greedy-best-first": 
+            case "A-star": 
+            search_result = iterateGraphSearch();
+            break;
+            case "RRT": 
+            search_result = "failed";
+                // (hack to speed viz) 
+                while (search_result == "failed") 
+                    search_result = iterateRRT();
+                break;
+                case "RRT-connect": 
+                // (hack to speed viz) while (search_result == "failed") 
+                search_result = iterateRRTConnect();
+                break;
+                case "RRT-star": 
+                search_result = iterateRRTStar();
+                break;
+                default: 
+                console.warn('search_canvas: search algorithm not found, using rrt as default');
+                search_result = iterateRRT();
+                break;
+            }
+        }
+
+    // update textbar with current search state
+    textbar.innerHTML = 
+    search_alg + " progress: " + search_result
+    + " <br> "
+    + "start: " + q_init
+    + " | "
+    + "goal: " + q_goal
+    + " <br> "
+    + "iteration: " + search_iter_count
+    + " | "
+    + "visited: " + search_visited
+    + " | "
+    + "queue size: " + visit_queue.length
+    + " <br> "
+    + "path length: " + path_length.toFixed(2);
+        //textbar.innerHTML += "<br> mouse ("+ mouse_x+","+mouse_y+")";
+        textbar.innerHTML += "<br> mouse ("+ xformViewWorldX(mouse_x)+","+xformViewWorldY(mouse_y)+")";
+
+
+    // callback request for the animate function be called again
+    //   more details online:  http://learningwebgl.com/blog/?p=3189
+    requestAnimationFrame( animate );
+}
+
+function iterateGraphSearch() {
+
+
+    // STENCIL: implement a single iteration of a graph search algorithm
+    //   for A-star (or DFS, BFS, Greedy Best-First)
+    //   An asynch timing mechanism is used instead of a for loop to avoid 
+    //   blocking and non-responsiveness in the browser.
+    //
+    //   Return "failed" if the search fails on this iteration.
+    //   Return "succeeded" if the search succeeds on this iteration.
+    //   Return "iterating" otherwise.
+    //
+    //   Provided support functions:
+    //
+    //   testCollision - returns whether a given configuration is in collision
+    //   drawHighlightedPathGraph - draws a path back to the start location
+    //   draw_2D_configuration - draws a square at a given location 
+
+    if(visit_queue.length == 1){ // this if statement is necessary for initializing obj for the subsequent if statement
+        obj = visit_queue[0];
+    }
+
+    if(visit_queue.length != 0 && (q_goal[0] < obj.x - eps/2 || q_goal[0] > obj.x + eps/2 || q_goal[1] < obj.y - eps/2 || q_goal[1] > obj.y + eps/2)){ 
+
+        if(search_alg == "depth-first"){ // different functions are performed based on the search method selected by the user
+            DFS();
+        }else if(search_alg == "breadth-first"){
+            BFS();
+        }else if(search_alg == "A-star"){
+            A_star();
+        }else if(search_alg == "greedy-best-first"){
+            GBF();
+        }
+    }
+
+    if(search_visited > search_max_iterations){
+        return "failed";
+    }else if(q_goal[0] > obj.x - eps/2 && q_goal[0] < obj.x + eps/2 && q_goal[1] > obj.y - eps/2 && q_goal[1] < obj.y + eps/2){
+        drawHighlightedPathGraph(obj);
+        search_iterate = false;
+        return "succeeded";
+    }else{
+        return "iterating";
+    }  
+}
+
+function iterateRRT() { // assumes search tree has already been initialized
+
+	var ranges = [range[0][0],range[0][0]];
+	var q_rand = randomConfig(ranges); 
+	var outcome = extendRRT(T_a,q_rand);
+
+	if(outcome[0] == "advanced"){
+		var q_new = outcome[1];
+		if(Math.abs(q_new[0] - q_goal[0]) < eps/2 && Math.abs(q_new[1] - q_goal[1]) < eps/2){
+			dfsPath(T_a);
+			search_iterate = false;
+			return "succeeded";
+		}
+	}else if(search_iter_count > search_max_iterations){
+		return "failed";
+	}
+	return "extended"; // "advanced"
+}
+
+function iterateRRTConnect() {
+
+	var ranges = [range[0][0],range[0][0]];
+	var q_rand = randomConfig(ranges);
+	var extend_outcome = extendRRT(T_a,q_rand); // [state,q_new]
+
+	if(extend_outcome[0] != "trapped"){
+		var q_target = extend_outcome[1]; 
+		var connect_outcome = connectRRT(T_b,q_target);
+		var q_new = connect_outcome[1];
+		if(connect_outcome[0] == "reached"){
+			dfsPath(T_a);
+			dfsPath(T_b);
+			search_iterate = false;
+			return "succeeded";
+		}
+	}
+	[T_a,T_b] = swap(T_a,T_b);
+
+	if(search_iter_count > search_max_iterations){
+		return "failed";
+	}else{
+		return "extended";
+	}
+
+    // STENCIL: implement a single iteration of an RRT-Connect algorithm.
+    //   An asynch timing mechanism is used instead of a for loop to avoid 
+    //   blocking and non-responsiveness in the browser.
+    //
+    //   Return "failed" if the search fails on this iteration.
+    //   Return "succeeded" if the search succeeds on this iteration.
+    //   Return "extended" otherwise.
+    //
+    //   Provided support functions:
+    //
+    //   testCollision - returns whether a given configuration is in collision
+    //   tree_init - creates a tree of configurations
+    //   insertTreeVertex - adds and displays new configuration vertex for a tree
+    //   insertTreeEdge - adds and displays new tree edge between configurations
+    //   drawHighlightedPath - renders a highlighted path in a tree
+}
+
+function iterateRRTStar() {
+
+	var z_min_idx,c_min,z_near_index;
+	var reach_distance = 1.5*eps;
+	var ranges = [range[0][0],range[0][0]];
+
+	var z_rand = randomConfig(ranges);
+	var z_nearest_idx = findNearestNeighbor(z_rand,T_a);
+	var z_nearest = T_a.vertices[z_nearest_idx].vertex; 
+	var z_new = steer(z_nearest,z_rand,eps);
+
+	var config_in_collision = testCollision(z_new);
+	if(!config_in_collision){
+		var Z_near_idx = near(T_a,z_new,reach_distance); 
+		[z_min_idx,c_min] = chooseParent(T_a,Z_near_idx,z_nearest_idx,z_new,eps); // pass in q_near_idx?
+		T_a = insertNode(T_a,z_new,z_min_idx,c_min); // comment
+		T_a = reWire(T_a,Z_near_idx,z_new,z_min_idx,eps); // comment
+	}
+	if(Math.abs(z_new[0] - q_goal[0]) < eps && Math.abs(z_new[1] - q_goal[1]) < eps){
+		dfsPath(T_a);
+		search_iterate = false;
+		return "succeeded";
+	}else if(search_iter_count > search_max_iterations){
+		return "failed";
+	}else{
+		return "extended";
+	}
+}
+
+//////////////////////////////////////////////////
+/////     STENCIL SUPPORT FUNCTIONS
+//////////////////////////////////////////////////
+
+// functions for transforming canvas coordinates into planning world coordinates
+function xformWorldViewX(world_x) {
+    return (world_x*100)+200;  // view_x
+}
+function xformWorldViewY(world_y) {
+    return (world_y*100)+200;  // view_y
+}
+function xformViewWorldX(view_x) {
+    return (view_x-200)/100;  // view_x
+}
+function xformViewWorldY(view_y) {
+    return (view_y-200)/100;  // view_y
+}
+
+
+function drawRobotWorld() {
+
+    // draw start and goal configurations
+    c = document.getElementById("myCanvas");
+    ctx = c.getContext("2d");
+    ctx.fillStyle = "#0000FF";
+    ctx.fillRect(xformWorldViewX(q_init[0])-5,xformWorldViewY(q_init[1])-5,10,10);
+    ctx.fillStyle = "#00FF00";
+    ctx.fillRect(xformWorldViewX(q_goal[0])-5,xformWorldViewY(q_goal[1])-5,10,10);
+
+    // draw robot's world
+    for (j=0;j<range.length;j++) { 
+        ctx.fillStyle = "#8888FF";
+        ctx.fillRect(xformWorldViewX(range[j][0][0]),xformWorldViewY(range[j][1][0]),xformWorldViewX(range[j][0][1])-xformWorldViewX(range[j][0][0]),xformWorldViewY(range[j][1][1])-xformWorldViewY(range[j][1][0]));
+    }
+
+}
+
+function drawHighlightedPath(path) {
+    ctx = c.getContext("2d");
+    ctx.strokeStyle="#0000FF";
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    for (i=1;i<path.length;i++) {
+        ctx.moveTo(xformWorldViewX(path[i-1].vertex[0]),xformWorldViewY(path[i-1].vertex[1]));
+        ctx.lineTo(xformWorldViewX(path[i].vertex[0]),xformWorldViewY(path[i].vertex[1]));
+    }
+    ctx.stroke();
+}
+
+function drawHighlightedPathGraph(current_node) {
+
+    // traverse path back to start and draw path
+    ctx.strokeStyle="#0000FF";
+    ctx.lineWidth=4;
+    ctx.beginPath();
+    path_length = 0; 
+    q_path_ref = current_node; 
+    while (q_path_ref.distance > 0) {
+        // KE: find cleaner way to draw edges
+        //draw_2D_edge_configurations([q_path_ref.x,q_path_ref.y],[q_path_ref.parent.x,q_path_ref.parent.y]);
+        ctx.moveTo(xformWorldViewX(q_path_ref.x),xformWorldViewY(q_path_ref.y));
+        ctx.lineTo(xformWorldViewX(q_path_ref.parent.x),xformWorldViewY(q_path_ref.parent.y));
+        path_length += Math.sqrt(Math.pow(q_path_ref.x-q_path_ref.parent.x,2)+Math.pow(q_path_ref.y-q_path_ref.parent.y,2));
+        q_path_ref = q_path_ref.parent;
+    }
+    ctx.closePath();
+    ctx.stroke();
+}
+
+
+function initSearchGraph() {
+
+    // KE: visit queue not created for certain values of eps
+    visit_queue = [];
+
+    // initialize search graph as 2D array over configuration space 
+    //   of 2D locations with specified spatial resolution 
+    G = [];
+    for (iind=0,xpos=-2;xpos<7;iind++,xpos+=eps) {
+        G[iind] = [];
+        for (jind=0,ypos=-2;ypos<7;jind++,ypos+=eps) {
+            G[iind][jind] = {
+                i:iind,j:jind, // mapping to graph array
+                x:xpos,y:ypos, // mapping to map coordinates
+                parent:null, // pointer to parent in graph along motion path
+                distance:10000, // distance to start via path through parent
+                visited:false, // flag for whether the node has been visited
+                priority:null, // visit priority based on fscore
+                queued:false // flag for whether the node has been queued for visiting
+            };
+
+            // STENCIL: determine whether this graph node should be the start point for the search
+
+            if((q_init[0] < G[iind][jind].x + eps/2 && q_init[0] > G[iind][jind].x - eps/2) // the start location/node can be located to as close as eps/2 in all directions
+                && (q_init[1] < G[iind][jind].y + eps/2 && q_init[1] > G[iind][jind].y - eps/2)){
+
+                G[iind][jind].distance = 0;
+                G[iind][jind].queued = true;
+                visit_queue.push(G[iind][jind]); // once we find the start node, we add it to the queue for iterateGraphSearch() to use
+            }   
+        }
+    }
+}
+
+function setPlanningScene() {
+
+    // obstacles specified as a range along [0] (x-dimension) and [1] y-dimension
+    range = []; // global variable
+
+    // world boundary
+    range[0] = [ [-1.8,5.8],[-1.8,-1] ];
+    range[1] = [ [-1.8,5.8],[5,5.8] ];
+    range[2] = [ [-1.8,-1], [-1.8,5.8] ];
+    range[3] = [ [5,5.8],   [-1.8,5.8] ];
+
+    if (typeof planning_scene === 'undefined')
+        planning_scene = 'empty';
+
+    if (planning_scene == 'misc') {
+        /*  misc stuff with narrow opening */
+        range[4] = [ [1,2],[1,2] ]; // [[x_min,x_max],[y_min,y_max]]
+        range[5] = [ [3,3.3],[1,4] ];
+        range[6] = [ [0.6,0.7],[0.4,0.7] ];
+        range[7] = [ [3.7,3.9],[-0.8,5] ];
+    }
+    else if (planning_scene == 'narrow1') {
+        /*  narrow path 1 */
+        range[4] = [ [1,3],[4,5] ];
+        range[5] = [ [1,3],[-1,2] ];
+        range[6] = [ [1,1.95],[2,3.8] ];
+    }
+    else if (planning_scene == 'narrow2') {
+        /*  narrow path 2 */
+        range[4] = [ [1,3],[4,5] ];
+        range[5] = [ [1,3],[-1,2] ];
+        range[6] = [ [1,1.9],[2,3.8] ];
+        range[7] = [ [2.1,3],[2.2,4] ];
+    }
+    else if (planning_scene == 'three_sections') {
+        /*  three compartments */
+        range[4] = [ [1,1.3],[4,5] ];
+        range[5] = [ [1,1.3],[-1,3.5] ];
+        range[6] = [ [2.7,3],[-1,0] ];
+        range[7] = [ [2.7,3],[.5,5] ];
+    }
+}
+
+function testCollision(q) {
+
+    var j;
+
+    // test for collision with each object
+    for (j=0;j<range.length;j++) { 
+
+        // assume configuration is in collision
+        var in_collision = true; 
+
+        // no collision detected, if configuration is outside obstacle along any dimension
+        for (i=0;i<q.length;i++) { 
+            if ((q[i]<range[j][i][0])||(q[i]>range[j][i][1]))
+                in_collision = false;
+        }
+
+        // return collision, if configuration inside obstacle extents along all dimensions
+        if (in_collision)
+            return true;
+    }
+
+    // return no collision, if no collision detected with any obstacle
+    return false;
+}
+
+function initRRT(q) {
+
+    // create tree object
+    var tree = {};
+
+    // initialize with vertex for given configuration
+    tree.vertices = [];
+    tree.vertices[0] = {};
+    tree.vertices[0].vertex = q;
+    tree.vertices[0].edges = [];
+
+    // maintain index of newest vertex added to tree
+    tree.newest = 0;
+
+    return tree;
+}
+
+function insertTreeVertex(tree,q) {
+
+    // create new vertex object for tree with given configuration and no edges
+    new_vertex = {};
+    new_vertex.edges = [];
+    new_vertex.vertex = q;
+    tree.vertices.push(new_vertex);
+
+    // maintain index of newest vertex added to tree
+    tree.newest = tree.vertices.length - 1;
+
+    // draw location on canvas
+    draw_2D_configuration(q);
+}
+
+function draw_2D_configuration(q) {
+    // draw location of 2D configuration on canvas
+    c = document.getElementById("myCanvas");
+    ctx = c.getContext("2d");
+    ctx.fillStyle = "#8888AA";
+    ctx.fillRect(xformWorldViewX(q[0])-3,xformWorldViewY(q[1])-3,6,6);
+}
+
+function draw_2D_edge_configurations(q1,q2) {
+    // draw line between locations of two 2D configurations on canvas
+    c = document.getElementById("myCanvas");
+    ctx = c.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(xformWorldViewX(q1[0]),xformWorldViewY(q1[1]));
+    ctx.lineTo(xformWorldViewX(q2[0]),xformWorldViewY(q2[1]));
+    ctx.stroke();
+}
+
+function insertTreeEdge(tree,q1_idx,q2_idx) {
+
+    // add edge to first vertex as pointer to second vertex
+    tree.vertices[q1_idx].edges.push(tree.vertices[q2_idx]);
+
+    // add edge to second vertex as pointer to first vertex
+    tree.vertices[q2_idx].edges.push(tree.vertices[q1_idx]);
+
+    // draw edge on canvas
+    draw_2D_edge_configurations(tree.vertices[q1_idx].vertex,tree.vertices[q2_idx].vertex); 
+}
+
+function removeTreeEdge(tree,q1_idx,q2_idx) {
+	// remove 1st edge
+	var i;
+
+	for (i = 0;i < tree.vertices[q1_idx].edges.length;i++){
+		if(tree.vertices[q1_idx].edges[i] == q2_idx) 
+			tree.vertices[q1_idx].edges.splice(i,1);
+	}
+	// remove 2nd edge
+	for (i = 0;i < tree.vertices[q2_idx].edges.length;i++){
+		if(tree.vertices[q2_idx].edges[i] == q1_idx) 
+			tree.vertices[q2_idx].edges.splice(i,1);
+	}
+    // draw edge on canvas
+    draw_2D_edge_configurations(tree.vertices[q1_idx].vertex,tree.vertices[q2_idx].vertex); 
+}
+
+//////////////////////////////////////////////////
+/////     MIN HEAP IMPLEMENTATION FUNCTIONS
+//////////////////////////////////////////////////
+
+    // STENCIL: implement min heap functions for graph search priority queue.
+    //   These functions work use the 'priority' field for elements in graph.
+    
+    // create empty object 
+
+    minheaper = {}; 
+
+// define insert function for min binary heap
+function minheap_insert(heap, new_element) {
+
+    heap.push(new_element);
+    new_element_location = heap.length - 1;
+
+
+    while(new_element_location != 0 && heap[new_element_location].priority < heap[Math.floor((new_element_location - 1)/2)].priority){ // no longer .priority
+        parent_location = Math.floor((new_element_location - 1)/2); // cannot define this before while loop b/c parent_location can change  
+        temp = heap[parent_location]; // temp = parent value
+        heap[parent_location] = heap[new_element_location]; // parent = new element value
+        heap[new_element_location] = temp; // replace new element with parent value
+        new_element_location = parent_location;
+    }
+    return heap;
+}
+
+// assign insert function within minheaper object
+minheaper.insert = minheap_insert;
+
+// define extract function for min binary heap
+function minheap_extract(heap) {
+
+  if(heap.length > 1){
+    swap_location = 0;
+    root_element = heap[swap_location];
+    last_element = heap.pop();
+    heap[swap_location] = last_element;
+
+    while((((2*swap_location) + 1) < heap.length && (heap[swap_location].priority > heap[(2*swap_location) + 1].priority))
+        || (((2*swap_location) + 2) < heap.length && (heap[swap_location].priority > heap[(2*swap_location) + 2].priority))){
+
+        child1_location = (2*swap_location) + 1; // cannot define these locations before while loop because swap_location can change
+        child2_location = (2*swap_location) + 2;
+
+        if(child2_location < heap.length){
+            if(heap[child1_location].priority < heap[child2_location].priority){
+                priority = child1_location;
+            }else{
+                priority = child2_location;
+            }
+        }else{
+            priority = child1_location; // for when child2 is not located in heap
+        }
+        temp = heap[priority];
+        heap[priority] = heap[swap_location];
+        heap[swap_location] = temp;
+        swap_location = priority;
+    }
+    }else if(heap.length == 1){
+        root_element = heap.pop();
+    }
+    return root_element;
+}
+
+minheaper.extract = minheap_extract;
+
+// Helper function to set neighbors to visited and to draw them on the canvas.
+function drawNeighborHelper() {
+
+    obj.visited = true;
+    search_visited ++;
+    draw_2D_configuration([obj.x,obj.y]);
+}
+
+// Helper function to calculate distances along the path in the East-West direction.
+function setDistances_EW(r){
+
+    if(G[obj.i + r][obj.j].distance > obj.distance + eps){
+        G[obj.i + r][obj.j].parent = obj;
+        G[obj.i + r][obj.j].distance = obj.distance + eps;
+    }
+}
+
+// Helper function to calculate distances along the path in the North-South direction.
+function setDistances_NS(s){
+
+    if(G[obj.i][obj.j + s].distance > obj.distance + eps){
+        G[obj.i][obj.j + s].parent = obj;
+        G[obj.i][obj.j + s].distance = obj.distance + eps;
+    }
+}
+
+// This function describes the depth-first search algorithm. It utilizes a stack data structure to determine the neighbors. Various helper functions are called 
+// to calculate distances along the current path as well as to set neighbors to visited and draw them.
+function DFS() {
+
+    obj = visit_queue.pop(); // curr_node = pop()
+    drawNeighborHelper();
+
+    for(var w = -1; w < 2; w += 2){
+        if(testCollision([G[obj.i + w][obj.j].x,G[obj.i + w][obj.j].y]) == false && G[obj.i + w][obj.j].queued == false && G[obj.i + w][obj.j].visited == false){
+            setDistances_EW(w);
+            G[obj.i + w][obj.j].queued = true;
+            visit_queue.push(G[obj.i + w][obj.j]);
+        }
+        if(testCollision([G[obj.i][obj.j + w].x,G[obj.i][obj.j + w].y]) == false && G[obj.i][obj.j + w].queued == false && G[obj.i][obj.j + w].visited == false){
+            setDistances_NS(w);
+            G[obj.i][obj.j + w].queued = true;
+            visit_queue.push(G[obj.i][obj.j + w]);  
+        }       
+    }
+}   
+
+// This function describes the breadth-first search algorithm. Compared to depth-first, the only difference is that breadth-first utilizes a queue 
+// structure rather than a stack.
+function BFS() {
+
+    obj = visit_queue.shift(); 
+    drawNeighborHelper();
+        
+    for(var w = -1; w < 2; w += 2){
+        if(testCollision([G[obj.i + w][obj.j].x,G[obj.i + w][obj.j].y]) == false && G[obj.i + w][obj.j].queued == false && G[obj.i + w][obj.j].visited == false){
+            setDistances_EW(w);
+            G[obj.i + w][obj.j].queued = true;
+            visit_queue.push(G[obj.i + w][obj.j]);
+        }
+        if(testCollision([G[obj.i][obj.j + w].x,G[obj.i][obj.j + w].y]) == false && G[obj.i][obj.j + w].queued == false && G[obj.i][obj.j + w].visited == false){
+            setDistances_NS(w);
+            G[obj.i][obj.j + w].queued = true;
+            visit_queue.push(G[obj.i][obj.j + w]);
+        }  
+    }           
+}
+
+// This function describes the A* algorithm. The f-score is calculated as the sum of the distance along the current path and the straight-line distance 
+// from the neighbor to the goal. Neighbors are selected based on lowest f-score by implementing a min heap.
+function A_star() {
+
+    obj = minheap_extract(visit_queue);
+    drawNeighborHelper();
+
+    for(var w = -1; w < 2; w += 2){ // use double for loop?
+        if(testCollision([G[obj.i + w][obj.j].x,G[obj.i + w][obj.j].y]) == false && G[obj.i + w][obj.j].queued == false && G[obj.i + w][obj.j].visited == false){
+            setDistances_EW(w);
+            G[obj.i + w][obj.j].priority = G[obj.i + w][obj.j].distance + Math.hypot((G[obj.i + w][obj.j].x - q_goal[0]),(G[obj.i + w][obj.j].y - q_goal[1]));
+            G[obj.i + w][obj.j].queued = true;
+            minheap_insert(visit_queue,G[obj.i + w][obj.j]); //W N E S
+        }
+        if(testCollision([G[obj.i][obj.j + w].x,G[obj.i][obj.j + w].y]) == false && G[obj.i][obj.j + w].queued == false && G[obj.i][obj.j + w].visited == false){
+            setDistances_NS(w);
+            G[obj.i][obj.j + w].priority = G[obj.i][obj.j + w].distance + Math.hypot((G[obj.i][obj.j + w].x - q_goal[0]),(G[obj.i][obj.j + w].y - q_goal[1]));
+            G[obj.i][obj.j + w].queued = true;
+            minheap_insert(visit_queue,G[obj.i][obj.j + w]);
+        }
+    }            
+}
+
+// This function describes the greedy-best-first algorithm. The f-score is calculated as the straight-line distance from the neighbor to the goal.
+// Like A*, neighbors are selected based on whoever has the lowest f-score (via a min heap).
+function GBF() {
+
+    obj = minheap_extract(visit_queue);
+    drawNeighborHelper();
+
+    for(var w = -1; w < 2; w += 2){
+        if(testCollision([G[obj.i + w][obj.j].x,G[obj.i + w][obj.j].y]) == false && G[obj.i + w][obj.j].queued == false && G[obj.i + w][obj.j].visited == false){
+            setDistances_EW(w);
+            G[obj.i + w][obj.j].priority = Math.hypot((G[obj.i + w][obj.j].x - q_goal[0]),(G[obj.i + w][obj.j].y - q_goal[1]));
+            G[obj.i + w][obj.j].queued = true;
+            minheap_insert(visit_queue,G[obj.i + w][obj.j]); //W N E S
+        }
+        if(testCollision([G[obj.i][obj.j + w].x,G[obj.i][obj.j + w].y]) == false && G[obj.i][obj.j + w].queued == false && G[obj.i][obj.j + w].visited == false){
+            setDistances_NS(w);
+            G[obj.i][obj.j + w].priority = Math.hypot((G[obj.i][obj.j + w].x - q_goal[0]),(G[obj.i][obj.j + w].y - q_goal[1]));
+            G[obj.i][obj.j + w].queued = true;
+            minheap_insert(visit_queue,G[obj.i][obj.j + w]); 
+        }
+    }            
+}
+
+
+
+//////////////////////////////////////////////////
+/////     RRT IMPLEMENTATION FUNCTIONS
+//////////////////////////////////////////////////
+
+    // STENCIL: implement RRT-Connect functions here, such as:
+    //   extendRRT
+    //   connectRRT
+    //   randomConfig
+    //   newConfig
+    //   findNearestNeighbor
+    //   dfsPath 
+
+    // 	 RRT* functions:
+    // 	 chooseParent
+    //   steer
+    //   reWire
+    //   reconnect
+
+function extendRRT(cardinal,q_rand){ // cardinal = tree
+	var q_near_idx = findNearestNeighbor(q_rand,cardinal);
+	var q_near = cardinal.vertices[q_near_idx].vertex;
+	var q_new = newConfig(q_rand,q_near,eps); // eps is a global var
+	var config_in_collision = testCollision(q_new);
+
+	if(!config_in_collision){ // if config is a valid config (i.e. not in collision)
+		insertTreeVertex(cardinal,q_new);
+		insertTreeEdge(cardinal,q_near_idx,cardinal.newest);
+		search_visited ++;
+		var state = "advanced";
+	}else{
+		var state = "trapped";	
+	}
+	return [state,q_new];
+}
+
+function connectRRT(cardinal,q_target){ // need extend to give back q_new if advanced or 
+	while(true){
+		var S = extendRRT(cardinal,q_target); // need to check if q_new is near goal
+		var q_new = S[1];
+
+		if(Math.abs(q_new[0] - q_target[0]) < eps/2 && Math.abs(q_new[1] - q_target[1]) < eps/2){ // no longer reaching goal but q_target passed in
+			return ["reached",q_new];
+		}
+		if(S[0] != "advanced") break;
+	}
+	return S;
+}
+
+function swap(tree_a,tree_b){
+	var temp = tree_a;  // swaps pointers so need to return
+	tree_a = tree_b;
+	tree_b = temp;
+	return [tree_a,tree_b];
+}
+
+function randomConfig(ranges){ 
+
+	var range_x = ranges[0][1] - ranges[0][0]; // diff in x
+	var range_y = ranges[1][1] - ranges[1][0]; // diff in y
+
+	var q_rand = [ranges[0][0] + Math.random()*range_x, ranges[1][0] + Math.random()*range_y];
+
+	return q_rand;
+}
+
+function findNearestNeighbor(q_rand,cardinal){ // cardinal = tree
+
+	var i;
+	var min_d = Math.pow(10,1000); // some very large number
+
+	for(i = 0;i < cardinal.vertices.length;i++){
+		var d = Euclid_distance(cardinal.vertices[i].vertex[0] - q_rand[0], cardinal.vertices[i].vertex[1] - q_rand[1]);
+		if(d < min_d){
+			min_d = d;
+			var d_index = i;
+		} 
+	}
+	return d_index; // returns tree configuration that is nearest 
+}
+
+function newConfig(q_rand,q_near,step_length){ // q = q_rand = q_target
+
+	var i;
+	var q_new = [];
+	var norm = Euclid_distance(q_rand[0] - q_near[0], q_rand[1] - q_near[1]); // calcs magnitude
+
+	for(i = 0;i < q_rand.length;i++){
+		q_new[i] = step_length * (q_rand[i] - q_near[i])/norm + q_near[i];
+	}
+	return q_new; 
+}
+ 
+ function dfsPath(cardinal){ // returns path of nodes from q_init to q_goal
+
+ 	var path = {};
+ 	path.vertices = [];
+
+    path.vertices[0] = {};
+    var vertice = cardinal.vertices[cardinal.newest];
+    path.vertices[0].vertex = vertice.vertex;
+
+     while((vertice.vertex[0] != q_init[0] && vertice.vertex[1] != q_init[1]) && (vertice.vertex[0] != q_goal[0] && vertice.vertex[1] != q_goal[1])){
+     	vertice = vertice.edges[0];
+     	var new_vertice = {};
+     	new_vertice.vertex = vertice.vertex;
+     	path.vertices.push(new_vertice);
+     }
+ 	drawHighlightedPath(path.vertices); 
+ 	path_length += path.vertices.length; 
+ }
+
+function Euclid_distance(x,y){
+	var dist = Math.hypot(x,y);
+	return dist;
+}
+
+function steer(z_nearest,z_rand,step_length){
+	var z_new = newConfig(z_rand,z_nearest,step_length);
+	return z_new;
+}
+
+function near(cardinal,z_new,reach_distance){ // returns array of indices of vertices in T_a that is within reach_distance from z_new
+
+	var i;
+	var Z_near_idx = [];
+
+	for(i = 0;i < cardinal.vertices.length;i++){
+		var distance = Euclid_distance(cardinal.vertices[i].vertex[0] - z_new[0],cardinal.vertices[i].vertex[1] - z_new[1]);
+		if(distance <= reach_distance){
+			Z_near_idx.push(i); // i is the index of vertice in tree
+		}
+	}
+	return Z_near_idx;
+}
+
+function chooseParent(cardinal,Z_near_idx,z_nearest_idx,z_new,step_length){
+
+	var i;
+	var z_min_idx = z_nearest_idx;
+	var z_nearest = cardinal.vertices[z_nearest_idx].vertex;
+	var c_min = z_nearest.cost + Euclid_distance(z_nearest[0] - z_new[0],z_nearest[1] - z_new[1]); 
+
+	for(i = 0;i < Z_near_idx.length;i++){
+		var z_near = cardinal.vertices[Z_near_idx[i]].vertex;
+
+			var c_prime = z_near.cost + Euclid_distance(z_near[0] - z_new[0],z_near[1] - z_new[1]);
+			if(c_prime < c_min){  
+				z_min_idx = Z_near_idx[i]; // need index for drawing edges
+				c_min = c_prime;
+			} 
+	}
+	return [z_min_idx,c_min]; 
+}
+
+function insertNode(cardinal,z_new,parent_idx,cost){ 
+
+	insertTreeVertex(cardinal,z_new);
+	insertTreeEdge(cardinal,parent_idx,cardinal.newest); 
+	z_new.cost = cost; // assign cost to new vertex
+	z_new.parent_idx = parent_idx; // set parent info 
+	return cardinal;
+}
+
+function reWire(cardinal,Z_near_idx,z_new,z_min_idx,step_length){
+	
+	var i;
+
+	for(i = 0;i < Z_near_idx.length;i++){
+		if(Z_near_idx[i] != z_min_idx){
+        	var z_near = cardinal.vertices[Z_near_idx[i]].vertex;
+        	var dist = Euclid_distance(z_near[0] - z_new[0],z_near[1] - z_new[1]);
+
+            var x_prime = steer(z_new,z_near,step_length);
+           	if(!testCollision(x_prime) && (z_new.cost + dist) < z_near.cost){
+           		cardinal = reconnect(z_new,Z_near_idx[i],cardinal);
+           	}
+        }
+    }
+    return cardinal;
+}
+
+function reconnect(z_new,z_near_index,cardinal){
+
+	removeTreeEdge(cardinal,cardinal.vertices[z_near_index].vertex.parent_idx,z_near_index);
+	var z_near = cardinal.vertices[z_near_index].vertex;
+	z_near.parent_idx = cardinal.newest;
+	insertTreeEdge(cardinal,cardinal.newest,z_near_index);
+	return cardinal;
+}
+
+</script>
+
+
+</body>
+</html>
+
+
