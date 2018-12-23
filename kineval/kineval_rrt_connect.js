@@ -170,14 +170,7 @@ function robot_rrt_planner_iterate() {
         }else if(rrt_alg == 1){ // rrt connect
 
             var q_rand = randomConfig(boundaries,q_start_config);
-            var extend_outcome = extendRRT(T_a,q_rand,eps);  
-
-            if(extend_outcome[0] == "reached"){
-                findPath(T_a);
-                findPath(T_b);
-                rrt_iterate = false;
-                return "reached";
-            }
+            var extend_outcome = extendRRT(T_a,q_rand,eps);
 
             if(extend_outcome[0] != "trapped"){
                 var q_target = extend_outcome[1]; 
